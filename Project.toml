@@ -1,0 +1,17 @@
+name = "SendEML"
+uuid = "0ff1ff47-a5f1-4dcc-91e1-2816f55e7086"
+authors = ["Yuki Ono <ykon0x1@gmail.com>"]
+version = "1.0.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Sockets = "6462fe0b-24de-5631-8697-dd941f90decc"
+TimeZones = "f269a46b-ccf7-5d73-abea-4c690281aa53"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
