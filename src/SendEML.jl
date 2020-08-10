@@ -380,7 +380,7 @@ module SendEML
             if Threads.nthreads() == 1
                 println("Threads.nthreads() == 1")
                 println("    Windows: `set JULIA_NUM_THREADS=4` or `\$env:JULIA_NUM_THREADS=4`(PowerShell)")
-                println("    Other: export JULIA_NUM_THREADS=4")
+                println("    Other: `export JULIA_NUM_THREADS=4`")
                 println("---")
             end
 
