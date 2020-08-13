@@ -14,10 +14,12 @@ module SendEML
 
     const CR = UInt8('\r')
     const LF = UInt8('\n')
+    const SPACE = UInt8(' ')
+    const HTAB = UInt8('\t')
     const CRLF = "\r\n"
 
-    const DATE_BYTES = Vector{UInt8}("Date: ")
-    const MESSAGE_ID_BYTES = Vector{UInt8}("Message-ID: ")
+    const DATE_BYTES = Vector{UInt8}("Date:")
+    const MESSAGE_ID_BYTES = Vector{UInt8}("Message-ID:")
 
     USE_PARALLEL = false
 
@@ -86,24 +88,46 @@ module SendEML
         !update_date && !update_message_id
     end
 
+    function is_wsp(b::UInt8)::Bool
+        b == SPACE || b == HTAB
+    end
+
+    function is_first_wsp(bytes::Vector{UInt8})::Bool
+        !isempty(bytes) ? is_wsp(first(bytes)) : false
+    end
+
     function replace_header(header::Vector{UInt8}, update_date::Bool, update_messge_id::Bool)::Vector{UInt8}
         if is_not_update(update_date, update_messge_id)
             return header
         end
 
-        repl_lines = get_raw_lines(header)
+        lines = get_raw_lines(header)
+
+        function remove_folding(idx::Int)
+            i = idx
+            while i < length(lines)
+                if is_first_wsp(lines[i])
+                    lines[i] = Vector{UInt8}()
+                    i += 1
+                else
+                    break
+                end
+            end
+        end
 
         if update_date
-            idx = findnext(is_date_line, repl_lines, 1)
+            idx = findnext(is_date_line, lines, 1)
             if !isnothing(idx)
-                repl_lines[idx] = Vector{UInt8}(make_now_date_line())
+                lines[idx] = Vector{UInt8}(make_now_date_line())
+                remove_folding(idx + 1)
             end
         end
 
         if update_messge_id
-            idx = findnext(is_message_id_line, repl_lines, 1)
+            idx = findnext(is_message_id_line, lines, 1)
             if !isnothing(idx)
-                repl_lines[idx] = Vector{UInt8}(make_random_message_id_line())
+                lines[idx] = Vector{UInt8}(make_random_message_id_line())
+                remove_folding(idx + 1)
             end
         end
 
@@ -121,7 +145,7 @@ module SendEML
         replace_line(update_messge_id, is_message_id_line, make_random_message_id_line)
         =#
 
-        concat_raw_lines(repl_lines)
+        concat_raw_lines(lines)
     end
 
     const EMPTY_LINE = [CR, LF, CR, LF]

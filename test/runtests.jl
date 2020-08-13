@@ -6,7 +6,7 @@
 using SendEML
 using Test
 
-function make_simple_mail()::String
+function make_simple_mail_text()::String
     text = """From: a001 <a001@ah62.example.jp>
 Subject: test
 To: a002@ah62.example.jp
@@ -23,16 +23,70 @@ test"""
     replace(text, "\n" => "\r\n")
 end
 
-function make_simple_mail_bytes()::Vector{UInt8}
-    Vector{UInt8}(make_simple_mail())
+function make_folded_mail()::Vector{UInt8}
+    text = """From: a001 <a001@ah62.example.jp>
+Subject: test
+To: a002@ah62.example.jp
+Message-ID:
+ <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>
+Date:
+ Sun, 26 Jul 2020
+ 22:01:37 +0900
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:78.0) Gecko/20100101
+ Thunderbird/78.0.1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8; format=flowed
+Content-Transfer-Encoding: 7bit
+Content-Language: en-US
+
+test"""
+    Vector{UInt8}(replace(text, "\n" => "\r\n"))
 end
 
-function make_invalid_mail()::String
-    replace(make_simple_mail(), "\r\n\r\n" => "") 
+function make_folded_end_date()::Vector{UInt8}
+    text = """From: a001 <a001@ah62.example.jp>
+Subject: test
+To: a002@ah62.example.jp
+Message-ID:
+ <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:78.0) Gecko/20100101
+ Thunderbird/78.0.1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8; format=flowed
+Content-Transfer-Encoding: 7bit
+Content-Language: en-US
+Date:
+ Sun, 26 Jul 2020
+ 22:01:37 +0900
+"""
+    Vector{UInt8}(replace(text, "\n" => "\r\n"))
 end
 
-function make_invalid_mail_bytes()::Vector{UInt8}
-    Vector{UInt8}(make_invalid_mail())
+function make_folded_end_message_id()::Vector{UInt8}
+    text = """From: a001 <a001@ah62.example.jp>
+Subject: test
+To: a002@ah62.example.jp
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:78.0) Gecko/20100101
+ Thunderbird/78.0.1
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8; format=flowed
+Content-Transfer-Encoding: 7bit
+Content-Language: en-US
+Date:
+ Sun, 26 Jul 2020
+ 22:01:37 +0900
+Message-ID:
+ <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>
+"""
+    Vector{UInt8}(replace(text, "\n" => "\r\n"))
+end
+
+function make_simple_mail()::Vector{UInt8}
+    Vector{UInt8}(make_simple_mail_text())
+end
+
+function make_invalid_mail()::Vector{UInt8}
+    Vector{UInt8}(replace(make_simple_mail_text(), "\r\n\r\n" => ""))
 end
 
 function make_test_send_cmd(expected::String)::Function
@@ -46,54 +100,64 @@ end
 # String constructor truncates data. #32528
 # https://github.com/JuliaLang/julia/issues/32528
 
+function get_header_line(header::Vector{UInt8}, name::String)::String
+    match(name * r":[\s\S]+?\r\n(?=([^ \t]|$))", String(copy(header)), 1).match
+end
+
 function get_date_line(header::Vector{UInt8})::String
-    match(r"Date: [\S ]+\r\n", String(copy(header)), 1).match
+    get_header_line(header, "Date")
 end
 
 function get_message_id_line(header::Vector{UInt8})::String
-    match(r"Message-ID: [\S]+\r\n", String(copy(header)), 1).match
+    get_header_line(header, "Message-ID")
 end
 
 @testset "SendEML" begin
-    @testset "make_simple_mail" begin
-        text = make_simple_mail()
+    @testset "make_simple_mail_text" begin
+        text = make_simple_mail_text()
         lines = split(text, "\r\n")
         @test length(lines) == 13
         @test lines[1] == "From: a001 <a001@ah62.example.jp>"
         @test lines[13] == "test"
     end
 
-    @testset "make_simple_mail_bytes" begin
-        bytes = make_simple_mail_bytes()
-        @test typeof(bytes) == Vector{UInt8}
+    @testset "make_simple_mail" begin
+        mail = make_simple_mail()
+        @test typeof(mail) == Vector{UInt8}
     end
 
-    @testset "get_date_line" begin
-        mail = make_simple_mail_bytes()
-        @test "Date: Sun, 26 Jul 2020 22:01:37 +0900\r\n" == get_date_line(mail)
-    end
+    @testset "get_header_line" begin
+        mail = make_simple_mail()
+        @test "Date: Sun, 26 Jul 2020 22:01:37 +0900\r\n" == get_header_line(mail, "Date")
+        @test "Message-ID: <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_header_line(mail, "Message-ID")
 
-    @testset "get_message_id_line" begin
-        mail = make_simple_mail_bytes()
-        @test "Message-ID: <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_message_id_line(mail)
+        folded_mail = make_folded_mail()
+        @test "Date:\r\n Sun, 26 Jul 2020\r\n 22:01:37 +0900\r\n" == get_header_line(folded_mail, "Date")
+        @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_header_line(folded_mail, "Message-ID")
+
+        end_date = make_folded_end_date()
+        @test "Date:\r\n Sun, 26 Jul 2020\r\n 22:01:37 +0900\r\n" == get_header_line(end_date, "Date")
+
+        end_message_id = make_folded_end_message_id()
+        @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_header_line(end_message_id, "Message-ID")
     end
 
     @testset "find_cr_index" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         @test SendEML.find_cr_index(mail, 1) == 34
         @test SendEML.find_cr_index(mail, 35) == 49
         @test SendEML.find_cr_index(mail, 59) == 75
     end
 
     @testset "find_lf_index" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         @test SendEML.find_lf_index(mail, 1) == 35
         @test SendEML.find_lf_index(mail, 36) == 50
         @test SendEML.find_lf_index(mail, 60) == 76
     end
 
     @testset "find_all_lf_indices" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         indices = SendEML.find_all_lf_indices(mail)
 
         @test indices[1] == 35
@@ -106,7 +170,7 @@ end
     end
 
     @testset "get_raw_lines" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         lines = SendEML.get_raw_lines(mail)
 
         @test length(lines) == 13
@@ -141,8 +205,24 @@ end
         @test length(line) <= 80
     end
 
+    @testset "is_wsp" begin
+        @test SendEML.is_wsp(UInt8(' ')) == true
+        @test SendEML.is_wsp(UInt8('\t')) == true
+        @test SendEML.is_wsp(UInt8('\0')) == false
+        @test SendEML.is_wsp(UInt8('a')) == false
+        @test SendEML.is_wsp(UInt8('b')) == false
+    end
+
+    @testset "is_first_wsp" begin
+        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8(' '), UInt8('a'), UInt8('b')])) == true
+        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('\t'), UInt8('a'), UInt8('b')])) == true
+        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('\0'), UInt8('a'), UInt8('b')])) == false
+        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('a'), UInt8('b'), UInt8(' ')])) == false
+        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('a'), UInt8('b'), UInt8('\t')])) == false
+    end
+
     @testset "replace_header" begin
-        (header, body) = SendEML.split_mail(make_simple_mail_bytes())
+        (header, _) = SendEML.split_mail(make_simple_mail())
         date_line = get_date_line(header)
         mid_line = get_message_id_line(header)
 
@@ -152,49 +232,54 @@ end
         repl_header = SendEML.replace_header(header, true, true)
         @test header != repl_header
 
-        function replace_header(update_date::Bool, update_message_id::Bool)::Tuple{String, String}
+        function replace_header(header::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Tuple{String, String}
             r_header = SendEML.replace_header(header, update_date, update_message_id)
             @test header != r_header
             (get_date_line(r_header), get_message_id_line(r_header))
         end
 
-        (r_date_line, r_mid_line) = replace_header(true, true)
+        (r_date_line, r_mid_line) = replace_header(header, true, true)
         @test date_line != r_date_line
         @test mid_line != r_mid_line
 
-        (r_date_line, r_mid_line) = replace_header(true, false)
+        (r_date_line, r_mid_line) = replace_header(header, true, false)
         @test date_line != r_date_line
         @test mid_line == r_mid_line
 
-        (r_date_line, r_mid_line) = replace_header(false, true)
+        (r_date_line, r_mid_line) = replace_header(header, false, true)
         @test date_line == r_date_line
         @test mid_line != r_mid_line
+
+        (folded_header, _) = SendEML.split_mail(make_folded_mail())
+        (f_date_line, f_mid_line) = replace_header(folded_header, true, true)
+        @test count(c -> (c == '\n'), f_date_line) == 1
+        @test count(c -> (c == '\n'), f_mid_line) == 1
     end
 
     @testset "concat_raw_lines" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         lines = SendEML.get_raw_lines(mail)
         new_mail = SendEML.concat_raw_lines(lines)
         @test mail == new_mail
     end
 
     @testset "combine_mail" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         (header, body) = SendEML.split_mail(mail)
         new_mail = SendEML.combine_mail(header, body)
         @test mail == new_mail
     end
 
     @testset "find_empty_line" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         @test SendEML.find_empty_line(mail) == 415
 
-        invalid_mail = make_invalid_mail_bytes()
+        invalid_mail = make_invalid_mail()
         @test SendEML.find_empty_line(invalid_mail) === nothing
     end
 
     @testset "split_mail" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         header_body = SendEML.split_mail(mail)
         @test header_body !== nothing
 
@@ -202,12 +287,12 @@ end
         @test mail[1:414] == header
         @test mail[(415 + 4):end] == body
 
-        invalid_mail = make_invalid_mail_bytes()
+        invalid_mail = make_invalid_mail()
         @test SendEML.split_mail(invalid_mail) === nothing
     end
 
     @testset "replace_raw_bytes" begin
-        mail = make_simple_mail_bytes()
+        mail = make_simple_mail()
         repl_mail_noupdate = SendEML.replace_raw_bytes(mail, false, false)
         @test mail == repl_mail_noupdate
 
@@ -215,7 +300,7 @@ end
         @test mail != repl_mail
         @test mail[end-100:end] == repl_mail[end-100:end]
 
-        invalid_mail = make_invalid_mail_bytes()
+        invalid_mail = make_invalid_mail()
         @test_throws ErrorException SendEML.replace_raw_bytes(invalid_mail, true, true)
     end
 
