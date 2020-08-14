@@ -268,10 +268,10 @@ end
         @test count(c -> (c == '\n'), f_mid_line) == 1
     end
 
-    @testset "concat_raw_lines" begin
+    @testset "concat_bytes" begin
         mail = make_simple_mail()
         lines = SendEML.get_raw_lines(mail)
-        new_mail = SendEML.concat_raw_lines(lines)
+        new_mail = SendEML.concat_bytes(lines)
         @test mail == new_mail
     end
 

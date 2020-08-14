@@ -61,7 +61,7 @@ module SendEML
             return false
         end
 
-        for i = 1:length(header)
+        for i = eachindex(header)
             if header[i] != line[i]
                 return false
             end
@@ -80,18 +80,25 @@ module SendEML
 
     function make_now_date_line()::String
         time = TimeZones.now(TimeZones.localzone())
-        offset = replace(Dates.format(time, "zzzz"), ":" => "", count=1)
-        "Date: " * Dates.format(time, "eee, dd uuu yyyy HH:MM:SS ") * offset * CRLF
+        offset = replace(Dates.format(time, "zzzz"), ":" => "", count = 1)
+        date_str = Dates.format(time, "eee, dd uuu yyyy HH:MM:SS ")
+        "Date: " * date_str * offset * CRLF
     end
 
     function make_random_message_id_line()::String
         length = 62
-        randstr = Random.randstring(length)
-        "Message-ID: <$randstr>$CRLF"
+        rand_str = Random.randstring(length)
+        "Message-ID: <$rand_str>$CRLF"
     end
 
-    function concat_raw_lines(lines::Vector{Vector{UInt8}})::Vector{UInt8}
-        collect(Iterators.flatten(lines))
+    function concat_bytes(lines::Vector{Vector{UInt8}})::Vector{UInt8}
+        buf = Vector{UInt8}(undef, sum(l -> length(l), lines))
+        offset = 1
+        for l in lines
+            copyto!(buf, offset, l)
+            offset += length(l)
+        end
+        buf
     end
 
     function is_not_update(update_date::Bool, update_message_id::Bool)::Bool
@@ -155,7 +162,7 @@ module SendEML
         replace_line(update_messge_id, is_message_id_line, make_random_message_id_line)
         =#
 
-        concat_raw_lines(lines)
+        concat_bytes(lines)
     end
 
     const EMPTY_LINE = [CR, LF, CR, LF]
