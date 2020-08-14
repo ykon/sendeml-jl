@@ -142,6 +142,18 @@ end
         @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_header_line(end_message_id, "Message-ID")
     end
 
+    @testset "match_header_field" begin
+        match = (s1, s2) -> SendEML.match_header_field(Vector{UInt8}(s1), Vector{UInt8}(s2))
+
+        @test match("Test:", "Test:") == true
+        @test match("Test: ", "Test:") == true
+        @test match("Test:x", "Test:") == true
+
+        @test match("", "Test:") == false
+        @test match("T", "Test:") == false
+        @test match("Test", "Test:") == false
+    end
+
     @testset "find_cr_index" begin
         mail = make_simple_mail()
         @test SendEML.find_cr_index(mail, 1) == 34

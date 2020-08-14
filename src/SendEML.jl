@@ -57,7 +57,17 @@ module SendEML
     end
 
     function match_header_field(line::Vector{UInt8}, header::Vector{UInt8})::Bool
-        line[1:length(header)] == header
+        if length(line) < length(header)
+            return false
+        end
+
+        for i = 1:length(header)
+            if header[i] != line[i]
+                return false
+            end
+        end
+
+        true
     end
 
     function is_date_line(line::Vector{UInt8})::Bool
@@ -93,7 +103,7 @@ module SendEML
     end
 
     function is_first_wsp(bytes::Vector{UInt8})::Bool
-        !isempty(bytes) ? is_wsp(first(bytes)) : false
+        isempty(bytes) ? false : is_wsp(first(bytes))
     end
 
     function replace_header(header::Vector{UInt8}, update_date::Bool, update_messge_id::Bool)::Vector{UInt8}
@@ -232,7 +242,7 @@ module SendEML
     const LAST_REPLY_REGEX = r"^\d{3} .+"
 
     function is_last_reply(line::String)::Bool
-        match(LAST_REPLY_REGEX, line) !== nothing
+        !isnothing(match(LAST_REPLY_REGEX, line))
     end
 
     function is_positive_reply(line::String)::Bool
