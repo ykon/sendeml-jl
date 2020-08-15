@@ -24,11 +24,11 @@ module SendEML
     USE_PARALLEL = false
 
     function find_cr_index(file_buf::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
-        findnext(b -> b === CR, file_buf, offset)
+        findnext(b -> b == CR, file_buf, offset)
     end
 
     function find_lf_index(file_buf::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
-        findnext(b -> b === LF, file_buf, offset)
+        findnext(b -> b == LF, file_buf, offset)
     end
 
     function find_all_lf_indices(file_buf::Vector{UInt8})::Vector{Int}
@@ -109,8 +109,13 @@ module SendEML
         b == SPACE || b == HTAB
     end
 
-    function is_first_wsp(bytes::Vector{UInt8})::Bool
-        isempty(bytes) ? false : is_wsp(first(bytes))
+    function Base.first(array::AbstractArray{T}, default::T)::T where T
+        it = iterate(array)
+        isnothing(it) ? default : it[1]
+    end
+
+    function is_folded_line(bytes::Vector{UInt8})::Bool
+        is_wsp(first(bytes, UInt8(0)))
     end
 
     function replace_header(header::Vector{UInt8}, update_date::Bool, update_messge_id::Bool)::Vector{UInt8}
@@ -123,7 +128,7 @@ module SendEML
         function remove_folding(idx::Int)
             i = idx
             while i < length(lines)
-                if is_first_wsp(lines[i])
+                if is_folded_line(lines[i])
                     lines[i] = Vector{UInt8}()
                     i += 1
                 else
@@ -377,24 +382,9 @@ module SendEML
     end
 
     function check_settings(settings::Dict{String, Any})
-        function not_found_key()::String
-            s = settings
-            if !haskey(s, "smtpHost")
-                "smtpHost"
-            elseif !haskey(s, "smtpPort")
-                "smtpPort"
-            elseif !haskey(s, "fromAddress")
-                "fromAddress"
-            elseif !haskey(s, "toAddress")
-                "toAddress"
-            elseif !haskey(s, "emlFile")
-                "emlFile"
-            else
-                ""
-            end
-        end
+        names = ["smtpHost", "smtpPort", "fromAddress", "toAddress", "emlFile"];
+        key = first(filter(n -> !haskey(settings, n), names), "");
 
-        key = not_found_key()
         if !isempty(key)
             error("$key key does not exist")
         end
@@ -441,7 +431,7 @@ module SendEML
             exit(0)
         end
 
-        if ARGS[1] === "--version"
+        if ARGS[1] == "--version"
             print_version()
             exit(0)
         end

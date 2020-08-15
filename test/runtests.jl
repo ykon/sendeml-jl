@@ -128,22 +128,24 @@ end
 
     @testset "get_header_line" begin
         mail = make_simple_mail()
-        @test "Date: Sun, 26 Jul 2020 22:01:37 +0900\r\n" == get_header_line(mail, "Date")
-        @test "Message-ID: <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_header_line(mail, "Message-ID")
+        @test "Date: Sun, 26 Jul 2020 22:01:37 +0900\r\n" == get_date_line(mail)
+        @test "Message-ID: <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_message_id_line(mail)
 
-        folded_mail = make_folded_mail()
-        @test "Date:\r\n Sun, 26 Jul 2020\r\n 22:01:37 +0900\r\n" == get_header_line(folded_mail, "Date")
-        @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_header_line(folded_mail, "Message-ID")
+        f_mail = make_folded_mail()
+        @test "Date:\r\n Sun, 26 Jul 2020\r\n 22:01:37 +0900\r\n" == get_date_line(f_mail)
+        @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_message_id_line(f_mail)
 
-        end_date = make_folded_end_date()
-        @test "Date:\r\n Sun, 26 Jul 2020\r\n 22:01:37 +0900\r\n" == get_header_line(end_date, "Date")
+        e_date = make_folded_end_date()
+        @test "Date:\r\n Sun, 26 Jul 2020\r\n 22:01:37 +0900\r\n" == get_date_line(e_date)
 
-        end_message_id = make_folded_end_message_id()
-        @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_header_line(end_message_id, "Message-ID")
+        e_message_id = make_folded_end_message_id()
+        @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_message_id_line(e_message_id)
     end
 
     @testset "match_header_field" begin
-        match = (s1, s2) -> SendEML.match_header_field(Vector{UInt8}(s1), Vector{UInt8}(s2))
+        function match(s1::String, s2::String)::Bool
+            SendEML.match_header_field(Vector{UInt8}(s1), Vector{UInt8}(s2))
+        end
 
         @test match("Test:", "Test:") == true
         @test match("Test: ", "Test:") == true
@@ -225,12 +227,17 @@ end
         @test SendEML.is_wsp(UInt8('b')) == false
     end
 
-    @testset "is_first_wsp" begin
-        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8(' '), UInt8('a'), UInt8('b')])) == true
-        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('\t'), UInt8('a'), UInt8('b')])) == true
-        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('\0'), UInt8('a'), UInt8('b')])) == false
-        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('a'), UInt8('b'), UInt8(' ')])) == false
-        @test SendEML.is_first_wsp(Vector{UInt8}([UInt8('a'), UInt8('b'), UInt8('\t')])) == false
+    @testset "is_folded_line" begin
+        function match(chars::Vararg{Char})::Bool
+            array = collect(Iterators.flatten(chars))
+            SendEML.is_folded_line(map(UInt8, array))
+        end
+
+        @test match(' ', 'a', 'b') == true
+        @test match('\t', 'a', 'b') == true
+        @test match('\0', 'a', 'b') == false
+        @test match('a', 'a', ' ') == false
+        @test match('b', 'a', '\t') == false
     end
 
     @testset "replace_header" begin
