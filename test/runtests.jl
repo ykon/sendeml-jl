@@ -310,31 +310,31 @@ end
         @test SendEML.split_mail(invalid_mail) === nothing
     end
 
-    @testset "replace_raw_bytes" begin
+    @testset "replace_mail" begin
         mail = make_simple_mail()
-        repl_mail_noupdate = SendEML.replace_raw_bytes(mail, false, false)
+        repl_mail_noupdate = SendEML.replace_mail(mail, false, false)
         @test mail == repl_mail_noupdate
 
-        repl_mail = SendEML.replace_raw_bytes(mail, true, true)
+        repl_mail = SendEML.replace_mail(mail, true, true)
         @test mail != repl_mail
         @test mail[end-100:end] == repl_mail[end-100:end]
 
         invalid_mail = make_invalid_mail()
-        @test_throws ErrorException SendEML.replace_raw_bytes(invalid_mail, true, true)
+        @test_throws ErrorException SendEML.replace_mail(invalid_mail, true, true)
     end
 
-    @testset "get_settings_from_text" begin
+    @testset "get_and_map_settings" begin
         text = SendEML.make_json_sample()
-        json = SendEML.get_settings_from_text(text)
+        settings = SendEML.map_settings(SendEML.get_settings_from_text(text))
 
-        @test json["smtpHost"] == "172.16.3.151"
-        @test json["smtpPort"] == 25
-        @test json["fromAddress"] == "a001@ah62.example.jp"
-        @test json["toAddress"] == ["a001@ah62.example.jp", "a002@ah62.example.jp", "a003@ah62.example.jp"]
-        @test json["emlFile"] == ["test1.eml", "test2.eml", "test3.eml"]
-        @test json["updateDate"] == true
-        @test json["updateMessageId"] == true
-        @test json["useParallel"] == false
+        @test settings.smtp_host == "172.16.3.151"
+        @test settings.smtp_port == 25
+        @test settings.from_address == "a001@ah62.example.jp"
+        @test settings.to_address == ["a001@ah62.example.jp", "a002@ah62.example.jp", "a003@ah62.example.jp"]
+        @test settings.eml_file == ["test1.eml", "test2.eml", "test3.eml"]
+        @test settings.update_date == true
+        @test settings.update_message_id == true
+        @test settings.use_parallel == false
     end
 
     @testset "is_last_reply" begin
@@ -377,7 +377,7 @@ end
             cmd
         end
 
-        SendEML.send_rcpt_to(test_func, Vector{Any}(["a001@ah62.example.jp", "a002@ah62.example.jp", "a003@ah62.example.jp"]))
+        SendEML.send_rcpt_to(test_func, ["a001@ah62.example.jp", "a002@ah62.example.jp", "a003@ah62.example.jp"])
     end
 
     @testset "send_data" begin
@@ -410,7 +410,9 @@ end
         @test_throws ErrorException check_no_key("emlFile")
 
         try
-            check_no_key("testKey")
+            check_no_key("updateDate")
+            check_no_key("updateMessageId")
+            check_no_key("useParallel")
         catch e
             @test false
         end

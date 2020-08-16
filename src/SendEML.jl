@@ -21,8 +21,6 @@ module SendEML
     const DATE_BYTES = Vector{UInt8}("Date:")
     const MESSAGE_ID_BYTES = Vector{UInt8}("Message-ID:")
 
-    USE_PARALLEL = false
-
     function find_cr_index(file_buf::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
         findnext(b -> b == CR, file_buf, offset)
     end
@@ -203,7 +201,7 @@ module SendEML
         return (header, body)
     end
 
-    function replace_raw_bytes(file_buf::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Vector{UInt8}
+    function replace_mail(file_buf::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Vector{UInt8}
         if is_not_update(update_date, update_message_id)
             return file_buf
         end
@@ -268,27 +266,26 @@ module SendEML
         end
     end
 
-    function get_current_id_prefix()::String
-        global USE_PARALLEL
-        USE_PARALLEL ? "id: $(Threads.threadid()), " : ""
+    function make_id_prefix(use_parallel::Bool)::String
+        use_parallel ? "id: $(Threads.threadid()), " : ""
     end
 
-    function send_raw_bytes(sock::Sockets.TCPSocket, file::String, update_date::Bool, update_message_id::Bool)
-        println(get_current_id_prefix() * "send: $file")
+    function send_mail(sock::Sockets.TCPSocket, file::String, update_date::Bool, update_message_id::Bool, use_parallel::Bool = false)
+        println(make_id_prefix(use_parallel) * "send: $file")
 
-        buf = replace_raw_bytes(read(file), update_date, update_message_id)
+        buf = replace_mail(read(file), update_date, update_message_id)
         write(sock, buf)
         flush(sock)
     end
 
-    function recv_line(sock::Sockets.TCPSocket)::String
+    function recv_line(sock::Sockets.TCPSocket, use_parallel::Bool = false)::String
         while true
             line = readline(sock)
             if isempty(line)
                 error("Connection closed by foreign host")
             end
 
-            println(get_current_id_prefix() * "recv: $line")
+            println(make_id_prefix(use_parallel) * "recv: $line")
 
             if is_last_reply(line)
                 if is_positive_reply(line)
@@ -304,17 +301,17 @@ module SendEML
         cmd == "$CRLF." ? "<CRLF>." : cmd
     end
 
-    function send_line(sock::Sockets.TCPSocket, cmd::String)
-        println(get_current_id_prefix() * "send: $(replace_crlf_dot(cmd))")
+    function send_line(sock::Sockets.TCPSocket, cmd::String, use_parallel::Bool = false)
+        println(make_id_prefix(use_parallel) * "send: $(replace_crlf_dot(cmd))")
 
         write(sock, cmd * CRLF)
         flush(sock)
     end
 
-    function make_send_cmd(sock::Sockets.TCPSocket)::Function
+    function make_send_cmd(sock::Sockets.TCPSocket, use_parallel::Bool)::Function
         cmd -> begin
-            send_line(sock, cmd)
-            recv_line(sock)
+            send_line(sock, cmd, use_parallel)
+            recv_line(sock, use_parallel)
         end
     end
 
@@ -326,7 +323,7 @@ module SendEML
         send("MAIL FROM: <$from_addr>")
     end
     
-    function send_rcpt_to(send::Function, to_addrs::Vector{Any})
+    function send_rcpt_to(send::Function, to_addrs::Vector{String})
         for addr in to_addrs
             send("RCPT TO: <$addr>")
         end
@@ -348,46 +345,81 @@ module SendEML
         send("QUIT")
     end
 
-    function send_messages(settings::Dict{String, Any}, eml_files::Vector{Any})
-        sock = Sockets.connect(settings["smtpHost"], settings["smtpPort"])
-        send = make_send_cmd(sock)
-        recv_line(sock)
+    struct Settings
+        smtp_host::String
+        smtp_port::Int
+        from_address::String
+        to_address::Vector{String}
+        eml_file::Vector{String}
+        update_date::Bool
+        update_message_id::Bool
+        use_parallel::Bool
+    end
+
+    function send_messages(settings::Settings, eml_files::Vector{String})
+        sock = Sockets.connect(settings.smtp_host, settings.smtp_port)
+        send = make_send_cmd(sock, settings.use_parallel)
+        recv_line(sock, settings.use_parallel)
         send_hello(send)
 
-        mail_sent = false
-        for file in eml_files
-            if !isfile(file)
-                println("$file: EML file does not exist")
-                continue
-            end
+        try
+            reset = false
+            for file in eml_files
+                if !isfile(file)
+                    println("$file: EML file does not exist")
+                    continue
+                end
 
-            if mail_sent
-                println("---")
-                send_rset(send)
-            end
+                if reset
+                    println("---")
+                    send_rset(send)
+                end
 
-            send_from(send, settings["fromAddress"])
-            send_rcpt_to(send, settings["toAddress"])
-            send_data(send)
-            send_raw_bytes(sock, file, get(settings, "updateDate", true), get(settings, "updateMessageId", true))
-            send_crlf_dot(send)
-            mail_sent = true
+                send_from(send, settings.from_address)
+                send_rcpt_to(send, settings.to_address)
+                send_data(send)
+
+                try
+                    send_mail(sock, file, settings.update_date, settings.update_message_id, settings.use_parallel)
+                catch e
+                    msg = isa(e, ErrorException) ? e.msg : e
+                    error("$file: $msg")
+                end
+
+                send_crlf_dot(send)
+                reset = true
+            end
+            send_quit(send)
+        finally
+            close(sock)
         end
-        
-        send_quit(send)
     end
 
-    function send_one_message(settings::Dict{String, Any}, file::String)
-        send_messages(settings, Vector{Any}([file]))
+    function check_json_value(json::Dict{String, Any}, name::String, type::Type)
+        try
+            if haskey(json, name)
+                convert(type, json[name])
+            end
+        catch e
+            error("$name: Invalid type")
+        end
     end
 
-    function check_settings(settings::Dict{String, Any})
+    function check_settings(json::Dict{String, Any})
         names = ["smtpHost", "smtpPort", "fromAddress", "toAddress", "emlFile"];
-        key = first(filter(n -> !haskey(settings, n), names), "");
-
-        if !isempty(key)
-            error("$key key does not exist")
+        key_idx = findfirst(n -> !haskey(json, n), names);
+        if !isnothing(key_idx)
+            error("$(names[key_idx]) key does not exist")
         end
+
+        check_json_value(json, "smtpHost", String)
+        check_json_value(json, "smtpPort", Int)
+        check_json_value(json, "fromAddress", String)
+        check_json_value(json, "toAddress", Vector{String})
+        check_json_value(json, "emlFile", Vector{String})
+        check_json_value(json, "updateDate", Bool)
+        check_json_value(json, "updateMessageId", Bool)
+        check_json_value(json, "useParallel", Bool)
     end
 
     function get_settings_from_text(text::String)::Dict{String, Any}
@@ -398,16 +430,30 @@ module SendEML
         get_settings_from_text(read(json_file, String))
     end
 
+    function map_settings(settings::Dict{String, Any})::Settings
+        Settings(
+            settings["smtpHost"],
+            settings["smtpPort"],
+            settings["fromAddress"],
+            settings["toAddress"],
+            settings["emlFile"],
+            get(settings, "updateDate", true),
+            get(settings, "updateMessageId", true),
+            get(settings, "useParallel", false)
+        )
+    end
+
     function proc_json_file(json_file::String)
         if !isfile(json_file)
             error("JSON file does not exist")
         end
 
         # ! Avoid JSON.parsefile(): file not closed
-        settings = get_settings(json_file)
-        check_settings(settings)
+        json = get_settings(json_file)
+        check_settings(json)
+        settings = map_settings(json)
 
-        if get(settings, "useParallel", false)
+        if settings.use_parallel
             if Threads.nthreads() == 1
                 println("Threads.nthreads() == 1")
                 println("    Windows: `set JULIA_NUM_THREADS=4` or `\$env:JULIA_NUM_THREADS=4`(PowerShell)")
@@ -415,13 +461,11 @@ module SendEML
                 println("---")
             end
 
-            global USE_PARALLEL
-            USE_PARALLEL = true
-            Threads.@threads for f in settings["emlFile"]
-                send_one_message(settings, f)
+            Threads.@threads for f in settings.eml_file
+                send_messages(settings, Vector{String}([f]))
             end
         else
-            send_messages(settings, settings["emlFile"])
+            send_messages(settings, settings.eml_file)
         end
     end
 
@@ -440,7 +484,8 @@ module SendEML
             try
                 proc_json_file(json_file)
             catch e
-                println("$json_file: $(e.msg)")
+                msg = isa(e, ErrorException) ? e.msg : e
+                println("error: $json_file: $msg")
             end
         end
     end
