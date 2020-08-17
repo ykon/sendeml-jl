@@ -356,10 +356,10 @@ module SendEML
         use_parallel::Bool
     end
 
-    function send_messages(settings::Settings, eml_files::Vector{String})
+    function send_messages(settings::Settings, eml_files::Vector{String}, use_parallel::Bool)
         sock = Sockets.connect(settings.smtp_host, settings.smtp_port)
-        send = make_send_cmd(sock, settings.use_parallel)
-        recv_line(sock, settings.use_parallel)
+        send = make_send_cmd(sock, use_parallel)
+        recv_line(sock, use_parallel)
         send_hello(send)
 
         try
@@ -380,7 +380,7 @@ module SendEML
                 send_data(send)
 
                 try
-                    send_mail(sock, file, settings.update_date, settings.update_message_id, settings.use_parallel)
+                    send_mail(sock, file, settings.update_date, settings.update_message_id, use_parallel)
                 catch e
                     msg = isa(e, ErrorException) ? e.msg : e
                     error("$file: $msg")
@@ -453,7 +453,7 @@ module SendEML
         check_settings(json)
         settings = map_settings(json)
 
-        if settings.use_parallel
+        if settings.use_parallel && length(settings.eml_file) > 1
             if Threads.nthreads() == 1
                 println("Threads.nthreads() == 1")
                 println("    Windows: `set JULIA_NUM_THREADS=4` or `\$env:JULIA_NUM_THREADS=4`(PowerShell)")
@@ -462,10 +462,10 @@ module SendEML
             end
 
             Threads.@threads for f in settings.eml_file
-                send_messages(settings, Vector{String}([f]))
+                send_messages(settings, Vector{String}([f]), true)
             end
         else
-            send_messages(settings, settings.eml_file)
+            send_messages(settings, settings.eml_file, false)
         end
     end
 
