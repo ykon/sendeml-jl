@@ -396,12 +396,12 @@ module SendEML
     end
 
     function check_json_value(json::Dict{String, Any}, name::String, type::Type)
-        try
-            if haskey(json, name)
+        if haskey(json, name)
+            try
                 convert(type, json[name])
+            catch e
+                error("$name: Invalid type: $(json[name])")
             end
-        catch e
-            error("$name: Invalid type")
         end
     end
 

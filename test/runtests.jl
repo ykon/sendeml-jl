@@ -409,16 +409,57 @@ end
         @test_throws ErrorException check_no_key("toAddress")
         @test_throws ErrorException check_no_key("emlFile")
 
-        try
-            check_no_key("updateDate")
-            check_no_key("updateMessageId")
-            check_no_key("useParallel")
-        catch e
-            @test false
-        end
+        @test_nowarn check_no_key("updateDate")
+        @test_nowarn check_no_key("updateMessageId")
+        @test_nowarn check_no_key("useParallel")
     end
 
     @testset "proc_json_file" begin
         @test_throws ErrorException SendEML.proc_json_file("__test__")
+    end
+
+    import JSON
+
+    @testset "check_json_value" begin
+        function check(json::String, type::Type)
+            SendEML.check_json_value(JSON.parse(json), "test", type)
+        end
+
+        function check_error(json::String, type::Type, expected::String)
+            try
+                check(json, type)
+                @test false
+            catch e
+                @test isa(e, ErrorException)
+                @test e.msg == expected
+            end
+        end
+
+        json = """{"test": "172.16.3.151"}"""
+        @test_nowarn check(json, String)
+        @test_throws ErrorException check(json, Int)
+        check_error(json, Bool, "test: Invalid type: 172.16.3.151")
+
+        json = """{"test": 172}"""
+        @test_nowarn check(json, Int)
+        @test_throws ErrorException check(json, String)
+        check_error(json, Bool, "test: Invalid type: 172")
+
+        json = """{"test": true}"""
+        @test_nowarn check(json, Bool)
+        @test_nowarn check(json, Int) # true <=> 1
+        check_error(json, String, "test: Invalid type: true")
+
+        json = """{"test": false}"""
+        @test_nowarn check(json, Bool)
+        @test_nowarn check(json, Int) # false <=> 0
+        check_error(json, String, "test: Invalid type: false")
+
+        json = """{"test": ["172.16.3.151", "172.16.3.152", "172.16.3.153"]}"""
+        @test_nowarn check(json, Vector{String})
+        check_error(json, String, "test: Invalid type: Any[\"172.16.3.151\", \"172.16.3.152\", \"172.16.3.153\"]")
+
+        json = """{"test": ["172.16.3.151", "172.16.3.152", 172]}"""
+        check_error(json, Vector{String}, "test: Invalid type: Any[\"172.16.3.151\", \"172.16.3.152\", 172]")
     end
 end
