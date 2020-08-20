@@ -38,11 +38,11 @@ julia --project ./src/SendEML.jl <setting_file> ...
 
 ## Options
 
-* updateDate
+* updateDate (default: true)
   - Replace "Date:" line with the current date and time.
 
-* updateMessageId
+* updateMessageId (default: true)
   - Replace "Message-ID:" line with a new random string ID.
 
-* useParallel
+* useParallel (default: false)
   - Enable parallel processing for eml files.
