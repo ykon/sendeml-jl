@@ -330,8 +330,8 @@ end
         @test settings.smtp_host == "172.16.3.151"
         @test settings.smtp_port == 25
         @test settings.from_address == "a001@ah62.example.jp"
-        @test settings.to_address == ["a001@ah62.example.jp", "a002@ah62.example.jp", "a003@ah62.example.jp"]
-        @test settings.eml_file == ["test1.eml", "test2.eml", "test3.eml"]
+        @test settings.to_addresses == ["a001@ah62.example.jp", "a002@ah62.example.jp", "a003@ah62.example.jp"]
+        @test settings.eml_files == ["test1.eml", "test2.eml", "test3.eml"]
         @test settings.update_date == true
         @test settings.update_message_id == true
         @test settings.use_parallel == false
@@ -406,8 +406,8 @@ end
         @test_throws ErrorException check_no_key("smtpHost")
         @test_throws ErrorException check_no_key("smtpPort")
         @test_throws ErrorException check_no_key("fromAddress")
-        @test_throws ErrorException check_no_key("toAddress")
-        @test_throws ErrorException check_no_key("emlFile")
+        @test_throws ErrorException check_no_key("toAddresses")
+        @test_throws ErrorException check_no_key("emlFiles")
 
         @test_nowarn check_no_key("updateDate")
         @test_nowarn check_no_key("updateMessageId")

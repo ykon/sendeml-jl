@@ -221,12 +221,12 @@ module SendEML
             "smtpHost": "172.16.3.151",
             "smtpPort": 25,
             "fromAddress": "a001@ah62.example.jp",
-            "toAddress": [
+            "toAddresses": [
                 "a001@ah62.example.jp",
                 "a002@ah62.example.jp",
                 "a003@ah62.example.jp"
             ],
-            "emlFile": [
+            "emlFiles": [
                 "test1.eml",
                 "test2.eml",
                 "test3.eml"
@@ -349,8 +349,8 @@ module SendEML
         smtp_host::String
         smtp_port::Int
         from_address::String
-        to_address::Vector{String}
-        eml_file::Vector{String}
+        to_addresses::Vector{String}
+        eml_files::Vector{String}
         update_date::Bool
         update_message_id::Bool
         use_parallel::Bool
@@ -376,7 +376,7 @@ module SendEML
                 end
 
                 send_from(send, settings.from_address)
-                send_rcpt_to(send, settings.to_address)
+                send_rcpt_to(send, settings.to_addresses)
                 send_data(send)
 
                 try
@@ -406,7 +406,7 @@ module SendEML
     end
 
     function check_settings(json::Dict{String, Any})
-        names = ["smtpHost", "smtpPort", "fromAddress", "toAddress", "emlFile"];
+        names = ["smtpHost", "smtpPort", "fromAddress", "toAddresses", "emlFiles"];
         key_idx = findfirst(n -> !haskey(json, n), names);
         if !isnothing(key_idx)
             error("$(names[key_idx]) key does not exist")
@@ -415,8 +415,8 @@ module SendEML
         check_json_value(json, "smtpHost", String)
         check_json_value(json, "smtpPort", Int)
         check_json_value(json, "fromAddress", String)
-        check_json_value(json, "toAddress", Vector{String})
-        check_json_value(json, "emlFile", Vector{String})
+        check_json_value(json, "toAddresses", Vector{String})
+        check_json_value(json, "emlFiles", Vector{String})
         check_json_value(json, "updateDate", Bool)
         check_json_value(json, "updateMessageId", Bool)
         check_json_value(json, "useParallel", Bool)
@@ -435,8 +435,8 @@ module SendEML
             settings["smtpHost"],
             settings["smtpPort"],
             settings["fromAddress"],
-            settings["toAddress"],
-            settings["emlFile"],
+            settings["toAddresses"],
+            settings["emlFiles"],
             get(settings, "updateDate", true),
             get(settings, "updateMessageId", true),
             get(settings, "useParallel", false)
@@ -453,7 +453,7 @@ module SendEML
         check_settings(json)
         settings = map_settings(json)
 
-        if settings.use_parallel && length(settings.eml_file) > 1
+        if settings.use_parallel && length(settings.eml_files) > 1
             if Threads.nthreads() == 1
                 println("Threads.nthreads() == 1")
                 println("    Windows: `set JULIA_NUM_THREADS=4` or `\$env:JULIA_NUM_THREADS=4`(PowerShell)")
@@ -461,11 +461,11 @@ module SendEML
                 println("---")
             end
 
-            Threads.@threads for f in settings.eml_file
+            Threads.@threads for f in settings.eml_files
                 send_messages(settings, Vector{String}([f]), true)
             end
         else
-            send_messages(settings, settings.eml_file, false)
+            send_messages(settings, settings.eml_files, false)
         end
     end
 
