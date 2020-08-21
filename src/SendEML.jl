@@ -208,7 +208,8 @@ module SendEML
 
         mail = split_mail(file_buf)
         if isnothing(mail)
-            error("Invalid mail")
+            println("error: Invalid mail: Disable updateDate, updateMessageId")
+            return file_buf
         end
 
         (header, body) = mail

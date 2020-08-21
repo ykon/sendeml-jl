@@ -320,7 +320,7 @@ end
         @test mail[end-100:end] == repl_mail[end-100:end]
 
         invalid_mail = make_invalid_mail()
-        @test_throws ErrorException SendEML.replace_mail(invalid_mail, true, true)
+        @test invalid_mail == SendEML.replace_mail(invalid_mail, true, true)
     end
 
     @testset "get_and_map_settings" begin
