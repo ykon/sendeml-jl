@@ -10,6 +10,8 @@ module SendEML
     import JSON
     import Sockets
 
+    using Match
+
     const VERSION = 1.0
 
     const CR = UInt8('\r')
@@ -21,19 +23,19 @@ module SendEML
     const DATE_BYTES = Vector{UInt8}("Date:")
     const MESSAGE_ID_BYTES = Vector{UInt8}("Message-ID:")
 
-    function find_cr_index(file_buf::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
-        findnext(b -> b == CR, file_buf, offset)
+    function find_cr_index(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
+        findnext(b -> b == CR, bytes, offset)
     end
 
-    function find_lf_index(file_buf::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
-        findnext(b -> b == LF, file_buf, offset)
+    function find_lf_index(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
+        findnext(b -> b == LF, bytes, offset)
     end
 
-    function find_all_lf_indices(file_buf::Vector{UInt8})::Vector{Int}
+    function find_all_lf_indices(bytes::Vector{UInt8})::Vector{Int}
         indices = Int[]
         offset = 1
         while true
-            idx = find_lf_index(file_buf, offset)
+            idx = find_lf_index(bytes, offset)
             if isnothing(idx)
                 return indices
             end
@@ -43,18 +45,22 @@ module SendEML
         end
     end
 
-    function get_raw_lines(file_buf::Vector{UInt8})::Vector{Vector{UInt8}}
-        indices = find_all_lf_indices(file_buf)
-        push!(indices, length(file_buf))
+    function get_raw_lines(bytes::Vector{UInt8})::Vector{Vector{UInt8}}
+        indices = find_all_lf_indices(bytes)
+        push!(indices, length(bytes))
         offset = 1
         map(i -> begin
-            line = file_buf[offset:i]
+            line = bytes[offset:i]
             offset = i + 1
             return line
         end, indices)
     end
 
-    function match_header_field(line::Vector{UInt8}, header::Vector{UInt8})::Bool
+    function match_header(line::Vector{UInt8}, header::Vector{UInt8})::Bool
+        if isempty(header)
+            error("header is empty")
+        end
+
         if length(line) < length(header)
             return false
         end
@@ -69,11 +75,11 @@ module SendEML
     end
 
     function is_date_line(line::Vector{UInt8})::Bool
-        match_header_field(line, DATE_BYTES)
+        match_header(line, DATE_BYTES)
     end
 
     function is_message_id_line(line::Vector{UInt8})::Bool
-        match_header_field(line, MESSAGE_ID_BYTES)
+        match_header(line, MESSAGE_ID_BYTES)
     end
 
     function make_now_date_line()::String
@@ -107,65 +113,48 @@ module SendEML
         b == SPACE || b == HTAB
     end
 
-    function Base.first(array::AbstractArray{T}, default::T)::T where T
-        it = iterate(array)
-        isnothing(it) ? default : it[1]
+    function first_byte(array::Vector{UInt8}, default::UInt8)::UInt8
+        isempty(array) ? default : first(array)
+    end
+
+    function first_char(str::String, default::Char)::Char
+        isempty(str) ? default : first(str)
     end
 
     function is_folded_line(bytes::Vector{UInt8})::Bool
-        is_wsp(first(bytes, UInt8(0)))
+        is_wsp(first_byte(bytes, UInt8(0)))
     end
 
-    function replace_header(header::Vector{UInt8}, update_date::Bool, update_messge_id::Bool)::Vector{UInt8}
-        if is_not_update(update_date, update_messge_id)
-            return header
+    function replace_line(lines::Vector{Vector{UInt8}}, match_line::Function, make_line::Function)::Vector{Vector{UInt8}}
+        idx = findnext(match_line, lines, 1)
+        if isnothing(idx)
+            return lines
         end
 
+        p1 = collect(Iterators.take(lines, idx - 1))
+        p2 = Vector{UInt8}(make_line())
+        p3 = collect(Iterators.dropwhile(is_folded_line, Iterators.drop(lines, idx)))
+
+        vcat(p1, [p2], p3)
+    end
+
+    function replace_date_line(lines::Vector{Vector{UInt8}})::Vector{Vector{UInt8}}
+        replace_line(lines, is_date_line, make_now_date_line)
+    end
+
+    function replace_message_id_line(lines::Vector{Vector{UInt8}})::Vector{Vector{UInt8}}
+        replace_line(lines, is_message_id_line, make_random_message_id_line)
+    end
+
+    function replace_header(header::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Vector{UInt8}
         lines = get_raw_lines(header)
-
-        function remove_folding(idx::Int)
-            i = idx
-            while i < length(lines)
-                if is_folded_line(lines[i])
-                    lines[i] = Vector{UInt8}()
-                    i += 1
-                else
-                    break
-                end
-            end
+        new_lines = @match (update_date, update_message_id) begin
+            (true, true) => replace_message_id_line(replace_date_line(lines))
+            (true, false) => replace_date_line(lines)
+            (false, true) => replace_message_id_line(lines)
+            (false, false) => lines
         end
-
-        if update_date
-            idx = findnext(is_date_line, lines, 1)
-            if !isnothing(idx)
-                lines[idx] = Vector{UInt8}(make_now_date_line())
-                remove_folding(idx + 1)
-            end
-        end
-
-        if update_messge_id
-            idx = findnext(is_message_id_line, lines, 1)
-            if !isnothing(idx)
-                lines[idx] = Vector{UInt8}(make_random_message_id_line())
-                remove_folding(idx + 1)
-            end
-        end
-
-        # ! FixMe: ERROR: MethodError: convert(::Type{Union{}}, ::Array{UInt8,1}) is ambiguous.
-        #=
-        function replace_line(update::Bool, match_line::Function, make_line::Function)::Nothing
-            if update
-                idx = findnext(match_line, repl_lines, 1)
-                if !isnothing(idx)
-                    repl_lines[idx] = Vector{UInt8}(make_line())
-                end
-            end
-        end
-        replace_line(update_date, is_date_line, make_now_date_line)
-        replace_line(update_messge_id, is_message_id_line, make_random_message_id_line)
-        =#
-
-        concat_bytes(lines)
+        concat_bytes(new_lines)
     end
 
     const EMPTY_LINE = [CR, LF, CR, LF]
@@ -174,15 +163,15 @@ module SendEML
         vcat(header, EMPTY_LINE, body)
     end
 
-    function find_empty_line(file_buf::Vector{UInt8})::Union{UInt, Nothing}
+    function find_empty_line(bytes::Vector{UInt8})::Union{UInt, Nothing}
         offset = 1
         while true
-            idx = find_cr_index(file_buf, offset)
-            if isnothing(idx) || (idx + 3) >= length(file_buf)
+            idx = find_cr_index(bytes, offset)
+            if isnothing(idx) || (idx + 3) >= length(bytes)
                 return nothing
             end
 
-            if file_buf[idx + 1] == LF && file_buf[idx + 2] == CR && file_buf[idx + 3] == LF
+            if bytes[idx + 1] == LF && bytes[idx + 2] == CR && bytes[idx + 3] == LF
                 return idx
             end
 
@@ -190,26 +179,25 @@ module SendEML
         end
     end
 
-    function split_mail(file_buf::Vector{UInt8})::Union{Tuple{Vector{UInt8}, Vector{UInt8}}, Nothing}
-        idx = find_empty_line(file_buf)
+    function split_mail(bytes::Vector{UInt8})::Union{Tuple{Vector{UInt8}, Vector{UInt8}}, Nothing}
+        idx = find_empty_line(bytes)
         if isnothing(idx)
             return nothing
         end
 
-        header = file_buf[1:(idx - 1)]
-        body = file_buf[(idx + length(EMPTY_LINE)):end]
+        header = bytes[1:(idx - 1)]
+        body = bytes[(idx + length(EMPTY_LINE)):end]
         return (header, body)
     end
 
-    function replace_mail(file_buf::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Vector{UInt8}
+    function replace_mail(bytes::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Union{Vector{UInt8}, Nothing}
         if is_not_update(update_date, update_message_id)
-            return file_buf
+            return bytes
         end
 
-        mail = split_mail(file_buf)
+        mail = split_mail(bytes)
         if isnothing(mail)
-            println("error: Invalid mail: Disable updateDate, updateMessageId")
-            return file_buf
+            return nothing
         end
 
         (header, body) = mail
@@ -257,13 +245,9 @@ module SendEML
     end
 
     function is_positive_reply(line::String)::Bool
-        code = first(line, 1)
-        if code == "2"
-            true
-        elseif code == "3"
-            true
-        else
-            false
+        return @match first_char(line, '0') begin
+            '2' || '3' => true
+            _ => false
         end
     end
 
@@ -274,8 +258,13 @@ module SendEML
     function send_mail(sock::Sockets.TCPSocket, file::String, update_date::Bool, update_message_id::Bool, use_parallel::Bool = false)
         println(make_id_prefix(use_parallel) * "send: $file")
 
-        buf = replace_mail(read(file), update_date, update_message_id)
-        write(sock, buf)
+        mail = read(file)
+        repl_mail = replace_mail(mail, update_date, update_message_id)
+        if isnothing(repl_mail)
+            println("error: Invalid mail: Disable updateDate, updateMessageId")
+        end
+
+        write(sock, something(repl_mail, mail))
         flush(sock)
     end
 
@@ -379,13 +368,7 @@ module SendEML
                 send_from(send, settings.from_address)
                 send_rcpt_to(send, settings.to_addresses)
                 send_data(send)
-
-                try
-                    send_mail(sock, file, settings.update_date, settings.update_message_id, use_parallel)
-                catch e
-                    msg = isa(e, ErrorException) ? e.msg : e
-                    error("$file: $msg")
-                end
+                send_mail(sock, file, settings.update_date, settings.update_message_id, use_parallel)
 
                 send_crlf_dot(send)
                 reset = true

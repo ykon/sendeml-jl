@@ -142,9 +142,9 @@ end
         @test "Message-ID:\r\n <b0e564a5-4f70-761a-e103-70119d1bcb32@ah62.example.jp>\r\n" == get_message_id_line(e_message_id)
     end
 
-    @testset "match_header_field" begin
+     @testset "match_header" begin
         function match(s1::String, s2::String)::Bool
-            SendEML.match_header_field(Vector{UInt8}(s1), Vector{UInt8}(s2))
+            SendEML.match_header(Vector{UInt8}(s1), Vector{UInt8}(s2))
         end
 
         @test match("Test:", "Test:") == true
@@ -227,6 +227,18 @@ end
         @test SendEML.is_wsp(UInt8('b')) == false
     end
 
+    @testset "first_byte" begin
+        @test SendEML.first_byte(SendEML.DATE_BYTES, UInt8('0')) == UInt8('D')
+        @test SendEML.first_byte(SendEML.MESSAGE_ID_BYTES, UInt8('0')) == UInt8('M')
+        @test SendEML.first_byte(Vector{UInt8}(), UInt8('0')) == UInt8('0')
+    end
+
+    @testset "first_char" begin
+        @test SendEML.first_char("Date:", '0') == 'D'
+        @test SendEML.first_char("Message-ID:", '0') == 'M'
+        @test SendEML.first_char("", '0') == '0'
+    end
+
     @testset "is_folded_line" begin
         function match(chars::Vararg{Char})::Bool
             array = collect(Iterators.flatten(chars))
@@ -240,16 +252,40 @@ end
         @test match('b', 'a', '\t') == false
     end
 
+    @testset "replace_date_line" begin
+        f_mail = make_folded_mail()
+        lines = SendEML.get_raw_lines(f_mail)
+        new_lines = SendEML.replace_date_line(lines)
+        @test lines != new_lines
+
+        new_mail = SendEML.concat_bytes(new_lines)
+        @test f_mail != new_mail
+        @test get_date_line(f_mail) != get_date_line(new_mail)
+        @test get_message_id_line(f_mail) == get_message_id_line(new_mail)
+    end
+
+    @testset "replace_message_id_line" begin
+        f_mail = make_folded_mail()
+        lines = SendEML.get_raw_lines(f_mail)
+        new_lines = SendEML.replace_message_id_line(lines)
+        @test lines != new_lines
+
+        new_mail = SendEML.concat_bytes(new_lines)
+        @test f_mail != new_mail
+        @test get_message_id_line(f_mail) != get_message_id_line(new_mail)
+        @test get_date_line(f_mail) == get_date_line(new_mail)
+    end
+
     @testset "replace_header" begin
-        (header, _) = SendEML.split_mail(make_simple_mail())
-        date_line = get_date_line(header)
-        mid_line = get_message_id_line(header)
+        mail = make_simple_mail()
+        date_line = get_date_line(mail)
+        mid_line = get_message_id_line(mail)
 
-        repl_header_noupdate = SendEML.replace_header(header, false, false)
-        @test header == repl_header_noupdate
+        repl_header_noupdate = SendEML.replace_header(mail, false, false)
+        @test mail == repl_header_noupdate
 
-        repl_header = SendEML.replace_header(header, true, true)
-        @test header != repl_header
+        repl_header = SendEML.replace_header(mail, true, true)
+        @test mail != repl_header
 
         function replace_header(header::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Tuple{String, String}
             r_header = SendEML.replace_header(header, update_date, update_message_id)
@@ -257,20 +293,20 @@ end
             (get_date_line(r_header), get_message_id_line(r_header))
         end
 
-        (r_date_line, r_mid_line) = replace_header(header, true, true)
+        (r_date_line, r_mid_line) = replace_header(mail, true, true)
         @test date_line != r_date_line
         @test mid_line != r_mid_line
 
-        (r_date_line, r_mid_line) = replace_header(header, true, false)
+        (r_date_line, r_mid_line) = replace_header(mail, true, false)
         @test date_line != r_date_line
         @test mid_line == r_mid_line
 
-        (r_date_line, r_mid_line) = replace_header(header, false, true)
+        (r_date_line, r_mid_line) = replace_header(mail, false, true)
         @test date_line == r_date_line
         @test mid_line != r_mid_line
 
-        (folded_header, _) = SendEML.split_mail(make_folded_mail())
-        (f_date_line, f_mid_line) = replace_header(folded_header, true, true)
+        f_mail = make_folded_mail()
+        (f_date_line, f_mid_line) = replace_header(f_mail, true, true)
         @test count(c -> (c == '\n'), f_date_line) == 1
         @test count(c -> (c == '\n'), f_mid_line) == 1
     end
@@ -320,7 +356,7 @@ end
         @test mail[end-100:end] == repl_mail[end-100:end]
 
         invalid_mail = make_invalid_mail()
-        @test invalid_mail == SendEML.replace_mail(invalid_mail, true, true)
+        @test isnothing(SendEML.replace_mail(invalid_mail, true, true))
     end
 
     @testset "get_and_map_settings" begin
