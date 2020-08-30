@@ -1,17 +1,17 @@
 ## SendEML
 A testing tool for sending raw eml files.
-* SendEML-jl runs on Julia 1.5 or newer.
+* SendEML-jl runs on Julia 1.5.1 or newer.
   > [Download Julia](https://julialang.org/downloads/)
 
 ## Usage
 
 ### Windows
 ```
-julia --project .\src\SendEML.jl <setting_file> ...
+julia --project src\SendEML.jl <setting_file> ...
 ```
 ### Others
 ```
-julia --project ./src/SendEML.jl <setting_file> ...
+julia --project src/SendEML.jl <setting_file> ...
 ```
 
 ## Setting File (JSON format)
