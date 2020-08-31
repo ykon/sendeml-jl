@@ -24,11 +24,11 @@ module SendEML
     const MESSAGE_ID_BYTES = Vector{UInt8}("Message-ID:")
 
     function find_cr_index(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
-        findnext(b -> b == CR, bytes, offset)
+        findnext(b -> b === CR, bytes, offset)
     end
 
     function find_lf_index(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
-        findnext(b -> b == LF, bytes, offset)
+        findnext(b -> b === LF, bytes, offset)
     end
 
     function find_all_lf_indices(bytes::Vector{UInt8})::Vector{Int}
@@ -65,13 +65,7 @@ module SendEML
             return false
         end
 
-        for i = eachindex(header)
-            if header[i] != line[i]
-                return false
-            end
-        end
-
-        true
+        all(i -> header[i] === line[i], eachindex(header))
     end
 
     function is_date_line(line::Vector{UInt8})::Bool
@@ -110,7 +104,7 @@ module SendEML
     end
 
     function is_wsp(b::UInt8)::Bool
-        b == SPACE || b == HTAB
+        b === SPACE || b === HTAB
     end
 
     function first_byte(array::Vector{UInt8}, default::UInt8)::UInt8
@@ -171,7 +165,7 @@ module SendEML
                 return nothing
             end
 
-            if bytes[idx + 1] == LF && bytes[idx + 2] == CR && bytes[idx + 3] == LF
+            if bytes[idx + 1] === LF && bytes[idx + 2] === CR && bytes[idx + 3] === LF
                 return idx
             end
 
@@ -288,7 +282,7 @@ module SendEML
     end
 
     function replace_crlf_dot(cmd::String)::String
-        cmd == "$CRLF." ? "<CRLF>." : cmd
+        cmd === "$CRLF." ? "<CRLF>." : cmd
     end
 
     function send_line(sock::Sockets.TCPSocket, cmd::String, use_parallel::Bool = false)
@@ -438,8 +432,8 @@ module SendEML
         settings = map_settings(json)
 
         if settings.use_parallel && length(settings.eml_files) > 1
-            if Threads.nthreads() == 1
-                println("Threads.nthreads() == 1")
+            if Threads.nthreads() === 1
+                println("Threads.nthreads() === 1")
                 println("    Windows: `set JULIA_NUM_THREADS=4` or `\$env:JULIA_NUM_THREADS=4`(PowerShell)")
                 println("    Other: `export JULIA_NUM_THREADS=4`")
                 println("---")
@@ -459,7 +453,7 @@ module SendEML
             exit(0)
         end
 
-        if ARGS[1] == "--version"
+        if ARGS[1] === "--version"
             print_version()
             exit(0)
         end
@@ -484,7 +478,7 @@ module SendEML
         return 0
     end
 
-    if abspath(PROGRAM_FILE) == @__FILE__
+    if abspath(PROGRAM_FILE) === @__FILE__
         main()
     end
 end # module

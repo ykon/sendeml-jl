@@ -149,11 +149,13 @@ end
 
         @test match("Test:", "Test:") == true
         @test match("Test: ", "Test:") == true
-        @test match("Test:x", "Test:") == true
+        @test match("Test: xxx", "Test:") == true
 
         @test match("", "Test:") == false
         @test match("T", "Test:") == false
         @test match("Test", "Test:") == false
+
+        @test_throws ErrorException match("Test: xxx", "")
     end
 
     @testset "find_cr_index" begin
