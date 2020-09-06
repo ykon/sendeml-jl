@@ -148,33 +148,34 @@ end
         end
 
         @test match("Test:", "Test:") == true
-        @test match("Test: ", "Test:") == true
+        @test match("Test:   ", "Test:") == true
         @test match("Test: xxx", "Test:") == true
 
         @test match("", "Test:") == false
         @test match("T", "Test:") == false
         @test match("Test", "Test:") == false
+        @test match("Xest:", "Test:") == false
 
         @test_throws ErrorException match("Test: xxx", "")
     end
 
-    @testset "find_cr_index" begin
+    @testset "find_cr" begin
         mail = make_simple_mail()
-        @test SendEML.find_cr_index(mail, 1) == 34
-        @test SendEML.find_cr_index(mail, 35) == 49
-        @test SendEML.find_cr_index(mail, 59) == 75
+        @test SendEML.find_cr(mail, 1) == 34
+        @test SendEML.find_cr(mail, 35) == 49
+        @test SendEML.find_cr(mail, 59) == 75
     end
 
-    @testset "find_lf_index" begin
+    @testset "find_lf" begin
         mail = make_simple_mail()
-        @test SendEML.find_lf_index(mail, 1) == 35
-        @test SendEML.find_lf_index(mail, 36) == 50
-        @test SendEML.find_lf_index(mail, 60) == 76
+        @test SendEML.find_lf(mail, 1) == 35
+        @test SendEML.find_lf(mail, 36) == 50
+        @test SendEML.find_lf(mail, 60) == 76
     end
 
-    @testset "find_all_lf_indices" begin
+    @testset "find_all_lf" begin
         mail = make_simple_mail()
-        indices = SendEML.find_all_lf_indices(mail)
+        indices = SendEML.find_all_lf(mail)
 
         @test indices[1] == 35
         @test indices[2] == 50
@@ -185,9 +186,9 @@ end
         @test indices[end] == 418
     end
 
-    @testset "get_raw_lines" begin
+    @testset "get_lines" begin
         mail = make_simple_mail()
-        lines = SendEML.get_raw_lines(mail)
+        lines = SendEML.get_lines(mail)
 
         @test length(lines) == 13
 
@@ -243,8 +244,7 @@ end
 
     @testset "is_folded_line" begin
         function match(chars::Vararg{Char})::Bool
-            array = collect(Iterators.flatten(chars))
-            SendEML.is_folded_line(map(UInt8, array))
+            SendEML.is_folded_line(map(UInt8, collect(Iterators.flatten(chars))))
         end
 
         @test match(' ', 'a', 'b') == true
@@ -256,7 +256,7 @@ end
 
     @testset "replace_date_line" begin
         f_mail = make_folded_mail()
-        lines = SendEML.get_raw_lines(f_mail)
+        lines = SendEML.get_lines(f_mail)
         new_lines = SendEML.replace_date_line(lines)
         @test lines != new_lines
 
@@ -268,7 +268,7 @@ end
 
     @testset "replace_message_id_line" begin
         f_mail = make_folded_mail()
-        lines = SendEML.get_raw_lines(f_mail)
+        lines = SendEML.get_lines(f_mail)
         new_lines = SendEML.replace_message_id_line(lines)
         @test lines != new_lines
 
@@ -315,7 +315,7 @@ end
 
     @testset "concat_bytes" begin
         mail = make_simple_mail()
-        lines = SendEML.get_raw_lines(mail)
+        lines = SendEML.get_lines(mail)
         new_mail = SendEML.concat_bytes(lines)
         @test mail == new_mail
     end
@@ -325,6 +325,21 @@ end
         (header, body) = SendEML.split_mail(mail)
         new_mail = SendEML.combine_mail(header, body)
         @test mail == new_mail
+    end
+
+    import SendEML.CR
+    import SendEML.LF
+
+    @testset "has_next_lf_cr_lf" begin
+        match = (bytes::Vector{UInt8}, idx::Int) -> SendEML.has_next_lf_cr_lf(bytes, idx)
+        zero = UInt8(0)
+
+        @test match([CR, LF, CR, LF], 1) == true
+        @test match([zero, CR, LF, CR, LF], 2) == true
+
+        @test match([CR, LF, CR, LF], 2) == false
+        @test match([CR, LF, CR, zero], 1) == false
+        @test match([CR, LF, CR, LF, zero], 2) == false
     end
 
     @testset "find_empty_line" begin

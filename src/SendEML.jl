@@ -23,36 +23,36 @@ module SendEML
     const DATE_BYTES = Vector{UInt8}("Date:")
     const MESSAGE_ID_BYTES = Vector{UInt8}("Message-ID:")
 
-    function find_cr_index(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
+    function find_cr(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
         findnext(b -> b === CR, bytes, offset)
     end
 
-    function find_lf_index(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
+    function find_lf(bytes::Vector{UInt8}, offset::Int)::Union{Int, Nothing}
         findnext(b -> b === LF, bytes, offset)
     end
 
-    function find_all_lf_indices(bytes::Vector{UInt8})::Vector{Int}
+    function find_all_lf(bytes::Vector{UInt8})::Vector{Int}
         indices = Int[]
         offset = 1
         while true
-            idx = find_lf_index(bytes, offset)
-            if isnothing(idx)
-                return indices
+            @match find_lf(bytes, offset) begin
+                _::Nothing => return indices
+                idx::Int => begin
+                    push!(indices, idx)
+                    offset = idx + 1
+                end
             end
-
-            push!(indices, idx)
-            offset = idx + 1
         end
     end
 
-    function get_raw_lines(bytes::Vector{UInt8})::Vector{Vector{UInt8}}
-        indices = find_all_lf_indices(bytes)
+    function get_lines(bytes::Vector{UInt8})::Vector{Vector{UInt8}}
+        indices = find_all_lf(bytes)
         push!(indices, length(bytes))
         offset = 1
         map(i -> begin
             line = bytes[offset:i]
             offset = i + 1
-            return line
+            line
         end, indices)
     end
 
@@ -62,10 +62,10 @@ module SendEML
         end
 
         if length(line) < length(header)
-            return false
+            false
+        else
+            isequal(line[1:length(header)], header)
         end
-
-        all(i -> header[i] === line[i], eachindex(header))
     end
 
     function is_date_line(line::Vector{UInt8})::Bool
@@ -125,11 +125,11 @@ module SendEML
             return lines
         end
 
-        p1 = collect(Iterators.take(lines, idx - 1))
-        p2 = Vector{UInt8}(make_line())
-        p3 = collect(Iterators.dropwhile(is_folded_line, Iterators.drop(lines, idx)))
+        p1 = Iterators.take(lines, idx - 1)
+        p2 = [Vector{UInt8}(make_line())]
+        p3 = Iterators.dropwhile(is_folded_line, Iterators.drop(lines, idx))
 
-        vcat(p1, [p2], p3)
+        collect(Iterators.flatten((p1, p2, p3)))
     end
 
     function replace_date_line(lines::Vector{Vector{UInt8}})::Vector{Vector{UInt8}}
@@ -141,7 +141,7 @@ module SendEML
     end
 
     function replace_header(header::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Vector{UInt8}
-        lines = get_raw_lines(header)
+        lines = get_lines(header)
         new_lines = @match (update_date, update_message_id) begin
             (true, true) => replace_message_id_line(replace_date_line(lines))
             (true, false) => replace_date_line(lines)
@@ -157,19 +157,24 @@ module SendEML
         vcat(header, EMPTY_LINE, body)
     end
 
-    function find_empty_line(bytes::Vector{UInt8})::Union{UInt, Nothing}
+    function has_next_lf_cr_lf(bytes::Vector{UInt8}, idx::Int)::Bool
+        if length(bytes) < (idx + 3)
+            false
+        else
+            isequal(bytes[(idx + 1):(idx + 3)], [LF, CR, LF])
+        end
+    end
+
+    function find_empty_line(bytes::Vector{UInt8})::Union{Int, Nothing}
         offset = 1
         while true
-            idx = find_cr_index(bytes, offset)
-            if isnothing(idx) || (idx + 3) >= length(bytes)
-                return nothing
+            @match find_cr(bytes, offset) begin
+                _::Nothing => return nothing
+                idx::Int, if has_next_lf_cr_lf(bytes, idx) end => return idx
+                idx::Int => begin
+                    offset = idx + 1
+                end
             end
-
-            if bytes[idx + 1] === LF && bytes[idx + 2] === CR && bytes[idx + 3] === LF
-                return idx
-            end
-
-            offset = idx + 1
         end
     end
 
@@ -181,7 +186,7 @@ module SendEML
 
         header = bytes[1:(idx - 1)]
         body = bytes[(idx + length(EMPTY_LINE)):end]
-        return (header, body)
+        (header, body)
     end
 
     function replace_mail(bytes::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Union{Vector{UInt8}, Nothing}
