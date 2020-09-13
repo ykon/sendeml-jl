@@ -45,7 +45,9 @@ module SendEML
         end
     end
 
-    function get_lines(bytes::Vector{UInt8})::Vector{Vector{UInt8}}
+    const Lines = Vector{Vector{UInt8}}
+
+    function get_lines(bytes::Vector{UInt8})::Lines
         indices = find_all_lf(bytes)
         push!(indices, length(bytes))
         offset = 1
@@ -89,7 +91,7 @@ module SendEML
         "Message-ID: <$rand_str>$CRLF"
     end
 
-    function concat_bytes(lines::Vector{Vector{UInt8}})::Vector{UInt8}
+    function concat_bytes(lines::Lines)::Vector{UInt8}
         buf = Vector{UInt8}(undef, sum(l -> length(l), lines))
         offset = 1
         for l in lines
@@ -119,7 +121,7 @@ module SendEML
         is_wsp(first_byte(bytes, UInt8(0)))
     end
 
-    function replace_line(lines::Vector{Vector{UInt8}}, match_line::Function, make_line::Function)::Vector{Vector{UInt8}}
+    function replace_line(lines::Lines, match_line::Function, make_line::Function)::Lines
         idx = findnext(match_line, lines, 1)
         if isnothing(idx)
             return lines
@@ -132,23 +134,22 @@ module SendEML
         collect(Iterators.flatten((p1, p2, p3)))
     end
 
-    function replace_date_line(lines::Vector{Vector{UInt8}})::Vector{Vector{UInt8}}
+    function replace_date_line(lines::Lines)::Lines
         replace_line(lines, is_date_line, make_now_date_line)
     end
 
-    function replace_message_id_line(lines::Vector{Vector{UInt8}})::Vector{Vector{UInt8}}
+    function replace_message_id_line(lines::Lines)::Lines
         replace_line(lines, is_message_id_line, make_random_message_id_line)
     end
 
     function replace_header(header::Vector{UInt8}, update_date::Bool, update_message_id::Bool)::Vector{UInt8}
         lines = get_lines(header)
-        new_lines = @match (update_date, update_message_id) begin
+        concat_bytes(@match (update_date, update_message_id) begin
             (true, true) => replace_message_id_line(replace_date_line(lines))
             (true, false) => replace_date_line(lines)
             (false, true) => replace_message_id_line(lines)
             (false, false) => lines
-        end
-        concat_bytes(new_lines)
+        end)
     end
 
     const EMPTY_LINE = [CR, LF, CR, LF]
